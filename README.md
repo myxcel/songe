@@ -49,7 +49,6 @@ You will also need the following ruby gems:
 ## License
 
 Copyright (c) 2020 Micaël P. Distributed under the MIT License.
-See [LICENSE] for further details.
 
-
+See [LICENSE](https://github.com/CodeEspritLibre/songe/blob/master/LICENSE) for further details.
 

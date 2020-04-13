@@ -1,5 +1,4 @@
-#!/usr/bin/env ruby
-# encoding: utf-8
+# Class to encode/decode keys to base32 and signatures to base64
 
 require 'base32'
 require 'base64'

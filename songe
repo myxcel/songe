@@ -278,8 +278,8 @@ def list_trusted_keys(s = nil)
       say "🗝 #{'%2d' % (i + 1)}: <%=color('#{k}', YELLOW)%>"
     elsif !(j = k.index s).nil?
       match_nb += 1
-      high_key = "<%=color('#{k[0...j]}', YELLOW)%><%=color('#{s}', GREEN+BOLD)%>" <<
-          "<%=color('#{k[(j + s.length)..-1]}', YELLOW)%>"
+      high_key = "<%=color('#{k[0...j]}', YELLOW)%><%=color('#{s}', GREEN+BOLD)%>" +
+                 "<%=color('#{k[(j + s.length)..-1]}', YELLOW)%>"
       say "🗝 #{'%2d' % (i + 1)}: #{high_key}"
     end
   end

@@ -48,9 +48,8 @@ You will also need the following ruby gems:
 
 ## License
 
-Copyright (c) 22020 Micaël P.
-
-See {file:LICENSE} for license information.
+Copyright (c) 2020 Micaël P. Distributed under the MIT License.
+See [LICENSE] for further details.
 
 
 

@@ -1,0 +1,229 @@
+#!/usr/bin/env ruby
+# encoding: UTF-8
+
+#
+# Dead simple command line file signature verifier
+#
+#  Created  01/04/2020
+#  Updated  16/04/2020
+#  Version  1.0.1.0
+#  Author   Micaël P. Esprit Libre {dev}
+#
+# Dependencies:
+#  - Ed25519,    https://github.com/RubyCrypto/ed25519
+#    installation:  $ sudo gem install ed25519
+#  - base32,    https://github.com/stesla/base32
+#    installation:  $ sudo gem install base32
+#  - digest-crc, https://github.com/postmodern/digest-crc
+#    installation:  $ sudo gem install digest-crc
+#
+# License:
+#  Copyright (c) 2020 Micaël P. Esprit Libre {dev}
+#  Distributed under the MIT License (https://mit-license.org/)
+#
+
+# ========== dependencies ==========
+
+require 'optparse'
+require 'base64'
+require 'yaml'
+begin
+  # additional gems
+  require 'digest'
+  require 'base32'
+  require 'ed25519'
+rescue LoadError => ex
+  puts "✖ #{ex.message.gsub("'"," ")}"
+  puts "  songev requires the following gems: ed25519, base32, digest-crc"
+  exit 2
+end
+
+# ========== Songe global module ==========
+module Songe
+
+VERSION = '1.1.0.0'
+DEBUG   = false
+
+# ========== constants declaration ==========
+
+KEYTRUST = '.songe.trust'
+SIGEXT   = '.sgsig'
+
+# ========== Encoding class ==========
+class Enc
+
+  public
+
+  def Enc::encode(str)
+    Base64::strict_encode64(str)
+  end
+
+  def Enc::decode(str)
+    begin
+      Base64::strict_decode64(str)
+    rescue => ex
+      raise RuntimeError, "Invalid data string format"
+    end
+  end
+
+  def Enc::encode_pkey(str)
+    encode_key_p((15 << 3).chr + str)
+  end
+
+  def Enc::encode_kkey(str)
+    encode_key_p((10 << 3).chr + str)
+  end
+
+  def Enc::decode_key(str)
+    begin
+      str = Base32::decode(str)
+    rescue => ex
+      raise RuntimeError, "Invalid key string format"
+    end
+    key = str[0...-2]
+    raise RuntimeError, "Invalid key string checksum" \
+      unless Digest::CRC16.digest(key) == str[-2, 2]
+    key[1..-1]
+  end
+
+  private
+
+  def Enc::encode_key_p(str)
+    str = str + Digest::CRC16.digest(str)
+    Base32::encode(str)
+  end
+end
+
+# ========== Signing class ==========
+class Verif
+
+# ========== commands declaration ==========
+
+private
+
+#
+# Returns the list of all trusted VerifyKey
+#
+def get_trusted_keys
+  return [] unless File.file?(KEYTRUST)
+
+  # no signature verification
+  File.open(KEYTRUST, 'r').readlines.map(&:chomp).uniq.sort
+end
+
+#
+# Abbreviate a key to a form like PABCD EFGHI JKLMN (67 bits)
+#
+# param key_str [String] the base32 encoded key
+def abbrev_key(key_str)
+  key_str[0, 5] + ' ' + key_str[5, 5] + ' ' +key_str[10, 5]
+end
+
+#
+# Verify file signature
+#
+# param file [String] the name of the file to verify
+def verify_file file
+  # Read YAML file and comment
+  data = YAML.load(File.open(file + SIGEXT))
+  puts "Signature in file: #{file + SIGEXT}" if @options[:verbose]
+  # Hash data
+  start = Time.now
+  sha512 = Digest::SHA512.file file
+  sha512 << "\0x00" + data[:datetime].to_s
+  sha512 << "\0x00" + data[:comment] unless data[:comment].nil?
+  # Control data
+  ctn = Enc.decode(data[:signature])
+  pub = Ed25519::VerifyKey.new Enc.decode_key(data[:verifykey])
+  puts "Signed with key: #{abbrev_key(data[:verifykey])}" if @options[:verbose]
+  t = get_trusted_keys.include?(data[:verifykey]) ? "with checked key" :
+    "but the verify key must be checked\n  (#{data[:verifykey]})"
+  puts "✔ Good signature #{t}\n" if pub.verify(ctn, sha512.digest)
+  puts "  signed on #{Time.at(data[:datetime])}"
+  puts "(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)" if @options[:verbose]
+  puts "comment: #{data[:comment]}\n" unless data[:comment].nil?
+end
+
+# ========== reading arguments ==========
+
+public
+
+#
+# Constructor
+#
+def initialize
+  @options = {}
+end
+
+#
+# Main entry: switch options
+#
+def main
+  cmd_given = false
+
+  OptionParser.new do |opts|
+    opts.banner = "
+Songe | dead simple signing file utility
+MIT License (https://mit-license.org/)
+
+Songe is a naive file signer, adapted to sign files in a per-project context: each project
+directory can have its own keys to directly sign project files. Songev version uses Ed25519
+(github.com/RubyCrypto/ed25519).
+
+Verify and signing use thus Ed25519 32-bytes keys. The verify key (starting with 'P') is
+joined to all signatures (so to verify a file, you just need the file and the signature
+`.sgsig` file).
+
+Trusted recipients' verify keys may be added to a trusted keys list saved to `.songe.trust`
+to add confidence when verifiyng files signed by them. The trusted keystore's signature is
+not checked, so it is up to the user to check the recipient's key.
+
+Usage:
+  $ songev [options]
+
+Examples:
+  Verify a downloaded file (assume the signature is `./myfile.txt.sgsig`)
+  $ songe --verify myfile.txt
+
+Options/commands:"
+
+    # options
+
+    opts.on("-b", "--[no-]verbose", "Run verbosely") do |v|
+      @options[:verbose] = v
+    end
+
+    # misc commands
+
+    opts.on("-h", "--help", "Prints this help") do
+      puts opts
+      exit
+    end
+
+    opts.on("-n", "--version", "Print version info") do
+      puts "🎖  songe\n   dead simple signing file utility"
+      puts "   version #{VERSION}\n   M.P. - Esprit Libre {dev}"
+      exit
+    end
+
+  end.parse!
+
+  raise ArgumentError, 'One command is required (see help)' unless ARGV.size > 0
+  verify_file ARGV[0]
+end
+
+end # module
+
+end # module
+
+# Run as main file
+if __FILE__ == $0
+  begin
+    Songe::Verif.new.main
+  rescue => ex
+    puts "✖ #{ex.message.gsub("'"," ")}"
+    puts "Backtrace (most recent first):\n  " + ex.backtrace.join("\n  ") if Songe::DEBUG
+    exit 1
+  end
+end
+

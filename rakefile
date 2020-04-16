@@ -1,0 +1,17 @@
+# Actions for ruby project Songe
+
+task default: [:clean]
+
+desc "Clean the directory"
+task :clean do
+  puts "Cleaning packages"
+  `rm test.txt.sgsig`
+end
+
+desc "Test a verification"
+task :verif do
+  puts "Testing verification"
+  puts `./songe -bv test.txt`
+  puts `./songev test.txt`
+end
+

@@ -2,43 +2,59 @@
 # encoding: UTF-8
 
 #
-# Dead simple command line file signer
+# Dead simple command line file signer and signature verifier
 #
 #  Created  01/04/2020
-#  Updated  13/04/2020
-#  Version  1.0.0.0
+#  Updated  16/04/2020
+#  Version  1.0.1.0
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
 #  - libsodium, https://github.com/jedisct1/libsodium
 #    installation on Ubuntu:  $ sudo apt install libsodium23
 #  - RbNaCl,    https://github.com/RubyCrypto/rbnacl
-#    installation on Ubuntu:  $ sudo apt install ruby-rbnacl
+#    installation:  $ sudo gem install rbnacl
 #  - highline,  https://github.com/JEG2/highline
-#    installation on Ubuntu:  $ sudo apt install ruby-highline
+#    installation:  $ sudo gem install highline
 #  - base32,    https://github.com/stesla/base32
-#    installation on Ubuntu:  $ sudo apt install ruby-base32
+#    installation:  $ sudo gem install base32
+#  - digest-crc, https://github.com/postmodern/digest-crc
+#    installation:  $ sudo gem install digest-crc
 #
 # License:
 #  Copyright (c) 2020 Micaël P. Esprit Libre {dev}
 #  Distributed under the MIT License (https://mit-license.org/)
 #
 
-class Songe
-
-VERSION = '1.0.0.0'
-DEBUG   = false
-
 # ========== dependencies ==========
 
-['highline/import', 'yaml', 'digest', 'rbnacl'].each { |lib| require lib }
-require "#{File.dirname(__FILE__)}/songe-lib/enc"
+require 'optparse'
+require 'base64'
+require 'yaml'
+begin
+  # additional gems
+  require 'highline/import'
+  require 'digest'
+  require 'base32'
+  require 'rbnacl'
+rescue LoadError => ex
+  puts "✖ #{ex.message.gsub("'"," ")}"
+  puts "  songe requires the following gems: rbnacl, base32, digest-crc, highline"
+  exit 2
+end
+
+# ========== Songe global module ==========
+module Songe
+
+VERSION = '1.1.0.0'
+DEBUG   = false
 
 # ========== constants declaration ==========
 
 KEYFILE  = '.songe.key'
 KEYTRUST = '.songe.trust'
 SIGEXT   = '.sgsig'
+SONGE_URL = 'https://github.com/CodeEspritLibre/songe'
 
 # ========== exceptions declaration ==========
 
@@ -46,6 +62,52 @@ class KeyfileError < RuntimeError
 end
 class PasswordError < RuntimeError
 end
+
+# Encoding class
+class Enc
+
+  def Enc::encode(str)
+    Base64::strict_encode64(str)
+  end
+
+  def Enc::decode(str)
+    begin
+      Base64::strict_decode64(str)
+    rescue => ex
+      raise RuntimeError, "Invalid data string format"
+    end
+  end
+
+  def Enc::encode_pkey(str)
+    encode_key_p((15 << 3).chr + str)
+  end
+
+  def Enc::encode_kkey(str)
+    encode_key_p((10 << 3).chr + str)
+  end
+
+  def Enc::decode_key(str)
+    begin
+      str = Base32::decode(str)
+    rescue => ex
+      raise RuntimeError, "Invalid key string format"
+    end
+    key = str[0...-2]
+    raise RuntimeError, "Invalid key string checksum" \
+      unless Digest::CRC16.digest(key) == str[-2, 2]
+    key[1..-1]
+  end
+
+  private
+
+  def Enc::encode_key_p(str)
+    str = str + Digest::CRC16.digest(str)
+    Base32::encode(str)
+  end
+end
+
+# Signing class
+class Sign
 
 # ========== commands declaration ==========
 
@@ -92,10 +154,13 @@ end
 def get_trusted_keys
   return [] unless File.file?(KEYTRUST)
 
-  data = YAML.load(File.open(KEYTRUST + SIGEXT))
-  pub = @options[:secure] ? get_signing_key[1] : get_verify_key
-  pub.verify(Enc.decode(data[:signature]), File.read(KEYTRUST)) \
-      if File.file?(KEYTRUST + SIGEXT)
+  if File.file?(KEYTRUST + SIGEXT)
+    data = YAML.load(File.open(KEYTRUST + SIGEXT))
+    pub = @options[:secure] ? get_signing_key[1] : get_verify_key
+    pub.verify(Enc.decode(data[:signature]), File.read(KEYTRUST)) if File.file?(KEYTRUST + SIGEXT)
+  else
+    say "<%=color('⚠ Warning:', YELLOW)%> <%=color('#{KEYFILE}', BOLD)%> file <%=color('✖ not signed', RED+BOLD)%>"
+  end
   File.open(KEYTRUST, 'r').readlines.map(&:chomp).uniq.sort
 end
 
@@ -116,11 +181,11 @@ def put_trusted_keys(keys, prv)
 end
 
 #
-# Abbreviate a key to a form like PABCDEFGHI
+# Abbreviate a key to a form like PABCD EFGHI JKLMN (67 bits)
 #
 # param key_str [String] the base32 encoded key
 def abbrev_key(key_str)
-  key_str[0, 10]
+  key_str[0, 5] + ' ' + key_str[5, 5] + ' ' +key_str[10, 5]
 end
 
 #
@@ -186,7 +251,7 @@ def write_signing_key(prv, pub)
   # Encrypt signing key with hash
   box = RbNaCl::SecretBox.new hash
   nonce = RbNaCl::Random.random_bytes box.nonce_bytes
-  cipherkey = salt + nonce + box.encrypt(nonce, prv)  # 32 + 16 + 24 + 48
+  cipherkey = salt + nonce + box.encrypt(nonce, prv)  # 16 + 24 + (16 + 32)
   # Write encrypted key to file
   data = {
     verifykey: Enc.encode_kkey(pub),
@@ -236,9 +301,11 @@ def sign_file file
     verifykey: Enc.encode_pkey(prvpub[1]),
     signature: Enc.encode(prvpub[0].sign(sha512.digest))
   }
-  File.write(file + SIGEXT, data.to_yaml)
+  msg = "# Signature made with Songe - #{SONGE_URL}\n" +
+        "# Just verify it using the 'songev' ruby script:  songev '#{file}'\n\n"
+  File.write(file + SIGEXT, msg + data.to_yaml)
   say "Signature <%=color('saved', GREEN)%> to: <%=color('#{file + SIGEXT}', BOLD)%>\n" +
-    "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
+      "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
 end
 
 #
@@ -258,11 +325,11 @@ def verify_file file
   ctn = Enc.decode(data[:signature])
   pub = RbNaCl::VerifyKey.new Enc.decode_key(data[:verifykey])
   say "Signed with key: <%=color('#{abbrev_key(data[:verifykey])}', YELLOW)%>" if @options[:verbose]
-  t = get_trusted_keys.include?(data[:verifykey]) ?
-    "with trusted key" : "but the verify key is <%=color('✖ not trusted', RED+BOLD)%>"
-  say "<%=color('✔ Good signature', GREEN+BOLD)%> #{t}\n" \
-    if pub.verify(ctn, sha512.digest)
-  say "  on <%=color('#{Time.at(data[:datetime])}', BOLD)%>"
+  t = get_trusted_keys.include?(data[:verifykey]) ? "with trusted key" :
+    "but the verify key is <%=color('✖ not trusted', RED+BOLD)%>\n" +
+    "  (<%=color('#{data[:verifykey]}', YELLOW)%>)"
+  say "<%=color('✔ Good signature', GREEN+BOLD)%> #{t}\n" if pub.verify(ctn, sha512.digest)
+  say "  signed on <%=color('#{Time.at(data[:datetime])}', BOLD)%>"
   say "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
   say "<%=color('comment', BOLD)%>: #{data[:comment]}\n" unless data[:comment].nil?
 end
@@ -304,12 +371,7 @@ end
 # param prv [SigningKey] the signing key to sign the keystore, or default one
 def del_trusted_key(key, prv = get_signing_key[0])
   trust = get_trusted_keys
-
-  if key =~ /\d+/
-    trust.delete_at(key.to_i - 1)
-  else
-    trust.delete key
-  end
+  key.length < 5 && key =~ /^\d+$/ and trust.delete_at(key.to_i - 1) or trust.delete(key)
   put_trusted_keys(trust, prv)
 end
 
@@ -336,24 +398,26 @@ end
 # Main entry: switch options
 #
 def main
-  require 'optparse'
   cmd_given = false
+
   OptionParser.new do |opts|
-    opts.banner << "Songe | dead simple signing file utility
+    opts.banner = "
+Songe | dead simple signing file utility
 MIT License (https://mit-license.org/)
 
 Songe is a naive file signer, adapted to sign files in a per-project context: each project
 directory can have its own keys to directly sign project files. Songe currently uses RbNaCl
 (github.com/RubyCrypto/rbnacl), which uses libsodium (github.com/jedisct1/libsodium).
 
-Verify and signing are thus Ed25519 32-bytes keys. The signing key (starting with 'K') is
+Verify and signing use thus Ed25519 32-bytes keys. The signing key (starting with 'K') is
 encrypted with the user passphrase before saved on disk. The verify key (starting with 'P')
-is prepanded to the signing saved key and to all signatures (so to verify a file, you just
-need the file as well as the signature `.sgsig` file). Key pair is saved to `.songe.key`.
+is joined to the signing key saved on disk and to all signatures (so to verify a file, you
+just need the file and the signature `.sgsig` file). Key pair is saved to `.songe.key`.
 
 Trusted recipients' verify keys may be added to a trusted keys list saved to `.songe.trust`
 to add confidence when verifiyng files signed by them. The trusted keystore is managed by
-songe commands and signed at each editing access by the personal signing key.
+songe commands and signed at each editing access by the personal signing key. Although the
+trust keystore is signed, it is up to the user to check the recipient's key.
 
 Usage:
   $ songe [options] command
@@ -462,10 +526,12 @@ end
 
 end # module
 
+end # module
+
 # Run as main file
 if __FILE__ == $0
   begin
-    Songe.new.main
+    Songe::Sign.new.main
   rescue => ex
     say "<%=color('✖ #{ex.message.gsub("'"," ")}', RED+BOLD)%>"
     say "<%=color('Backtrace', BOLD)%> (most recent first):\n  " + ex.backtrace.join("\n  ") \

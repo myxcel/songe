@@ -36,7 +36,7 @@ begin
   require 'highline/import'
   require 'digest'
   require 'base32'
-  require 'rbnacl'
+  require 'rbnacl'  # needs libsodium
 rescue LoadError => ex
   puts "✖ #{ex.message.gsub("'"," ")}"
   puts "  songe requires the following gems: rbnacl, base32, digest-crc, highline"
@@ -104,7 +104,7 @@ class Enc
     str = str + Digest::CRC16.digest(str)
     Base32::encode(str)
   end
-end
+end # class Enc
 
 # Signing class
 class Sign
@@ -159,7 +159,8 @@ def get_trusted_keys
     pub = @options[:secure] ? get_signing_key[1] : get_verify_key
     pub.verify(Enc.decode(data[:signature]), File.read(KEYTRUST)) if File.file?(KEYTRUST + SIGEXT)
   else
-    say "<%=color('⚠ Warning:', YELLOW)%> <%=color('#{KEYFILE}', BOLD)%> file <%=color('✖ not signed', RED+BOLD)%>"
+    say "<%=color('⚠ Warning:', YELLOW)%> <%=color('#{KEYFILE}', BOLD)%> file is " +
+        "<%=color('✖ not signed', RED+BOLD)%>"
   end
   File.open(KEYTRUST, 'r').readlines.map(&:chomp).uniq.sort
 end
@@ -259,7 +260,7 @@ def write_signing_key(prv, pub)
   }
   File.open(KEYFILE, 'w') do |f|
     f.chmod 0600
-    f.write data.to_yaml  #Enc.encode(cipherkey)
+    f.write data.to_yaml
   end
 end
 
@@ -283,7 +284,7 @@ end
 # Sign file
 #
 # param file [String] the name of the file to sign
-def sign_file file
+def sign_file(file)
   # Get keys
   prvpub = get_signing_key
   pub_str = Enc.encode_pkey prvpub[1]
@@ -312,7 +313,7 @@ end
 # Verify file signature
 #
 # param file [String] the name of the file to verify
-def verify_file file
+def verify_file(file)
   # Read YAML file and comment
   data = YAML.load(File.open(file + SIGEXT))
   say "Signature in file: <%=color('#{file + SIGEXT}', BOLD)%>" if @options[:verbose]
@@ -337,6 +338,7 @@ end
 #
 # List all trusted keys or find trusted keys by a part of its base32 encoding
 #
+# param s [String] the key substring to filter with, or nil for no filter
 def list_trusted_keys(s = nil)
   match_nb = 0
   get_trusted_keys.each_with_index do |k, i|
@@ -359,7 +361,7 @@ end
 # Add a trusted key to the key store
 #
 # param key [String] the base32 encoded key to add
-# param prv [SigningKey] the signing key to sign the keystore, or default one
+# param prv [SigningKey] the signing key to sign the keystore, or dthe efault one
 def add_trusted_key(key, prv = get_signing_key[0])
   put_trusted_keys(get_trusted_keys << key, prv)
 end
@@ -368,7 +370,7 @@ end
 # Remove a trusted key from the key store
 #
 # param key [String] the base32 encoded key to delete
-# param prv [SigningKey] the signing key to sign the keystore, or default one
+# param prv [SigningKey] the signing key to sign the keystore, or the default one
 def del_trusted_key(key, prv = get_signing_key[0])
   trust = get_trusted_keys
   key.length < 5 && key =~ /^\d+$/ and trust.delete_at(key.to_i - 1) or trust.delete(key)
@@ -524,7 +526,7 @@ Options/commands:"
   raise ArgumentError, 'One command is required (see help)'
 end
 
-end # module
+end # class Sign
 
 end # module
 

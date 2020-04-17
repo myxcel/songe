@@ -92,7 +92,7 @@ class Enc
     str = str + Digest::CRC16.digest(str)
     Base32::encode(str)
   end
-end
+end # class Enc
 
 # ========== Signing class ==========
 class Verif
@@ -212,7 +212,7 @@ Options/commands:"
   verify_file ARGV[0]
 end
 
-end # module
+end # class Verif
 
 end # module
 

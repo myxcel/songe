@@ -18,7 +18,7 @@ trust keystore is signed, it is up to the user to check the recipient's key.
 ## Features
 
  * Sign and verify files easily with Ed25519 keys
- * Manage trusted keys
+ * Manage a keystore of trusted recipients public keys
 
 ## Installation
 
@@ -38,7 +38,7 @@ For the light (verify only) version **songev**
  * [digest-crc](https://github.com/postmodern/digest-crc)
  * [base32](https://github.com/stesla/base32)
 
-## Usage examples
+## Simple usage examples
 
 ```bash
   # Generate a new signing key (writes the key to `./.songe.key`)
@@ -55,6 +55,26 @@ For the light (verify only) version **songev**
   songe --verbose --verify 'yourfile.txt'   # displays more information
   # or for the songev version
   songev 'yourfile.txt'
+```
+
+## Check scripts integrity
+
+The Keybase PGP signing key belongs to [espritlibredev](https://keybase.io/espritlibredev)
+(fingerprint `AA77 7903 6281 D0E9 209B E8B9 2627 39EB A36C EB3E`).
+
+Go to https://keybase.io/verify and paste the content of the `SHA256SUM.asc` files, or
+if you are using [keybase](https://keybase.io), simply type the following command to verify
+the two scripts integrity:
+
+```bash
+keybase pgp verify -i SHA256SUM.asc && grep ' songe' SHA256SUM.asc | sha256sum -c
+```
+
+or if you prefer using GnuPG:
+
+```bash
+curl https://keybase.io/espritlibredev/pgp_keys.asc | gpg --import && \
+  gpg --verify SHA256SUM.asc && grep ' songe' SHA256SUM.asc | sha256sum -c
 ```
 
 ## License

@@ -6,7 +6,7 @@
 #
 #  Created  01/04/2020
 #  Updated  16/04/2020
-#  Version  1.0.1.0
+#  Version  1.2.0.0
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
@@ -41,13 +41,20 @@ end
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.1.0.0'
+VERSION = '1.2.0.0'
 DEBUG   = false
 
 # ========== constants declaration ==========
 
 KEYTRUST = '.songe.trust'
 SIGEXT   = '.sgsig'
+ENV_SHOME = 'SONGE_HOME'
+ENV_HOME  = 'HOME'
+
+# ========== exceptions declaration ==========
+
+class VerificationError < RuntimeError
+end
 
 # ========== Encoding class ==========
 class Enc
@@ -105,10 +112,10 @@ private
 # Returns the list of all trusted VerifyKey
 #
 def get_trusted_keys
-  return [] unless File.file?(KEYTRUST)
+  return [] unless File.file?(@trust_path)
 
   # no signature verification
-  File.open(KEYTRUST, 'r').readlines.map(&:chomp).uniq.sort
+  File.open(@trust_path, 'r').readlines.map(&:chomp).uniq.sort
 end
 
 #
@@ -120,28 +127,46 @@ def abbrev_key(key_str)
 end
 
 #
-# Verify file signature
+# Verify a signature for a file/data
 #
-# param file [String] the name of the file to verify
-def verify_file file
+# param file [String] the signed file name (without sign extension)
+def verify(file)
   # Read YAML file and comment
   data = YAML.load(File.open(file + SIGEXT))
+  raise KeyfileError, "Invalid file #{file + SIGEXT} content" unless data && data.is_a?(Hash)
+
   puts "Signature in file: #{file + SIGEXT}" if @options[:verbose]
+  clearsg = !File.file?(file)
+
   # Hash data
   start = Time.now
-  sha512 = Digest::SHA512.file file
-  sha512 << "\0x00" + data[:datetime].to_s
-  sha512 << "\0x00" + data[:comment] unless data[:comment].nil?
+  sha = if clearsg
+    raise VerificationError, "File #{file} does not exist, no signed data" if data[:data].nil?
+    Digest::SHA512.new
+  else
+    puts "⚠ Warning: clear sign data found but ignored" if data.has_key?(:data)
+    Digest::SHA512.file(file)
+  end
+  sha << "\0x00" + data[:comment] unless data[:comment].nil?
+  sha << "\0x00" + data[:datetime].to_s
+  sha << "\0x00" + data[:data] if clearsg
+
   # Control data
   ctn = Enc.decode(data[:signature])
   pub = Ed25519::VerifyKey.new Enc.decode_key(data[:verifykey])
   puts "Signed with key: #{abbrev_key(data[:verifykey])}" if @options[:verbose]
-  t = get_trusted_keys.include?(data[:verifykey]) ? "with checked key" :
-    "but the verify key must be checked\n  (#{data[:verifykey]})"
-  puts "✔ Good signature #{t}\n" if pub.verify(ctn, sha512.digest)
-  puts "  signed on #{Time.at(data[:datetime])}"
-  puts "(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)" if @options[:verbose]
-  puts "comment: #{data[:comment]}\n" unless data[:comment].nil?
+  t = get_trusted_keys.include?(data[:verifykey]) ? "with trusted key" :
+    "but the verify key is ✖ not trusted\n  (#{data[:verifykey]})"
+  pub.verify(ctn, sha.digest) || raise(VerificationError, "BAD signature")
+  if clearsg
+    $stderr.puts "✔ Good signature #{t}\n  signed on #{Time.at(data[:datetime])}"
+    $stdout.print data[:data]
+    $stderr.puts "Comment: #{data[:comment]}\n" unless data[:comment].nil?
+  else
+    puts "✔ Good signature #{t}\n  signed on #{Time.at(data[:datetime])}"
+    puts "(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)" if @options[:verbose]
+    puts "Comment: #{data[:comment]}\n" unless data[:comment].nil?
+  end
 end
 
 # ========== reading arguments ==========
@@ -153,6 +178,16 @@ public
 #
 def initialize
   @options = {}
+  # Search for key file in .|SONGE_HOME|HOME
+  if File.file?(KEYTRUST)
+    @trust_path = KEYTRUST
+  elsif !(path = ENV[ENV_SHOME]).nil? && Dir.exist?(ENV[ENV_SHOME]) ||
+        !(path = ENV[ENV_HOME]).nil? && File.file?(File.join(path, KEYFILE))
+    # If found dir SONGE_HOME, no need to check if key file exists
+    @trust_path = File.join(path, KEYTRUST)
+  else
+    @trust_path = KEYTRUST
+  end
 end
 
 #
@@ -209,7 +244,7 @@ Options/commands:"
   end.parse!
 
   raise ArgumentError, 'One command is required (see help)' unless ARGV.size > 0
-  verify_file ARGV[0]
+  verify ARGV[0]
 end
 
 end # class Verif
@@ -221,8 +256,8 @@ if __FILE__ == $0
   begin
     Songe::Verif.new.main
   rescue => ex
-    puts "✖ #{ex.message.gsub("'"," ")}"
-    puts "Backtrace (most recent first):\n  " + ex.backtrace.join("\n  ") if Songe::DEBUG
+    $stderr.puts "✖ #{ex.message.gsub("'"," ")}"
+    $stderr.puts "Backtrace (most recent first):\n  " + ex.backtrace.join("\n  ") if Songe::DEBUG
     exit 1
   end
 end

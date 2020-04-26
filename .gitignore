@@ -1,6 +1,3 @@
-test.txt
-test.txt.sgsig
-
-.songe.key
-.songe.trust
-.songe.trust.sgsig
+test.*
+.songe.key*
+.songe.trust*

@@ -5,8 +5,8 @@
 # Dead simple command line file signer and signature verifier
 #
 #  Created  01/04/2020
-#  Updated  16/04/2020
-#  Version  1.0.1.0
+#  Updated  23/04/2020
+#  Version  1.2.0.0
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
@@ -28,7 +28,9 @@
 
 # ========== dependencies ==========
 
+require 'io/console'
 require 'optparse'
+require 'securerandom'
 require 'base64'
 require 'yaml'
 begin
@@ -46,7 +48,7 @@ end
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.1.0.0'
+VERSION = '1.2.0.0'
 DEBUG   = false
 
 # ========== constants declaration ==========
@@ -55,12 +57,16 @@ KEYFILE  = '.songe.key'
 KEYTRUST = '.songe.trust'
 SIGEXT   = '.sgsig'
 SONGE_URL = 'https://github.com/CodeEspritLibre/songe'
+ENV_SHOME = 'SONGE_HOME'
+ENV_HOME  = 'HOME'
 
 # ========== exceptions declaration ==========
 
 class KeyfileError < RuntimeError
 end
 class PasswordError < RuntimeError
+end
+class VerificationError < RuntimeError
 end
 
 # Encoding class
@@ -117,15 +123,18 @@ private
 # Returns the stored pair as an array [SigningKey, VerifyKey]
 #
 def get_signing_key
-  raise KeyfileError, 'No keyfile found in the current directory' unless File.file?(KEYFILE)
+  raise KeyfileError, "No keyfile found in dir, SONGE_HOME or HOME" unless File.file?(@key_path)
+  say "🗝 Keyfile found in <%=color('#{@key_path}', BOLD)%>"
 
   # Read key file
-  data = YAML.load(File.open(KEYFILE))
+  data = YAML.load(File.open(@key_path))
+  raise KeyfileError, "Invalid keyfile #{@key_path} content" unless data && data.is_a?(Hash)
+
   cipherkey = Enc.decode(data[:signingkey])
   # Get and hash password
-  pwd1 = ask("✏ Please enter the <%=color('passphrase', BOLD)%>: ") {|q| q.echo = false}
+  pwd = ask("✏ Please enter the <%=color('passphrase', BOLD)%>: ") {|q| q.echo = false}
   salt = cipherkey[(i = 0)...(i += RbNaCl::PasswordHash::Argon2::SALTBYTES)]
-  hash = RbNaCl::PasswordHash.argon2(pwd1, salt, 5, 7_256_678, 32)
+  hash = RbNaCl::PasswordHash.argon2(pwd, salt, 5, 7_256_678, 32)
   # Decrypt the signing key
   box = RbNaCl::SecretBox.new(hash)
   nonce = cipherkey[i...(i += box.nonce_bytes)]
@@ -142,9 +151,12 @@ end
 # Returns the stored VerifyKey
 #
 def get_verify_key
-  raise KeyfileError, 'No keyfile found in the current directory' unless File.file?(KEYFILE)
+  raise KeyfileError, "No keyfile found in dir, SONGE_HOME or HOME" unless File.file?(@key_path)
 
-  data = YAML.load(File.open(KEYFILE))
+  # Read key file
+  data = YAML.load(File.open(@key_path))
+  raise KeyfileError, "Invalid keyfile #{@key_path} content" unless data && data.is_a?(Hash)
+
   RbNaCl::VerifyKey.new(Enc.decode_key(data[:verifykey]))
 end
 
@@ -152,17 +164,18 @@ end
 # Returns the list of all trusted VerifyKey
 #
 def get_trusted_keys
-  return [] unless File.file?(KEYTRUST)
+  return [] unless File.file?(@trust_path)
 
-  if File.file?(KEYTRUST + SIGEXT)
-    data = YAML.load(File.open(KEYTRUST + SIGEXT))
+  if File.file?(@trust_path + SIGEXT)
+    data = YAML.load(File.open(@trust_path + SIGEXT))
     pub = @options[:secure] ? get_signing_key[1] : get_verify_key
-    pub.verify(Enc.decode(data[:signature]), File.read(KEYTRUST)) if File.file?(KEYTRUST + SIGEXT)
-  else
-    say "<%=color('⚠ Warning:', YELLOW)%> <%=color('#{KEYFILE}', BOLD)%> file is " +
+    pub.verify(Enc.decode(data[:signature]), File.read(@trust_path)) \
+      if File.file?(@trust_path + SIGEXT)
+  elsif @warn_trust
+    say "<%=color('⚠ Warning:', YELLOW)%> <%=color('#{@key_path}', BOLD)%> file is " +
         "<%=color('✖ not signed', RED+BOLD)%>"
   end
-  File.open(KEYTRUST, 'r').readlines.map(&:chomp).uniq.sort
+  File.open(@trust_path, 'r').readlines.map(&:chomp).uniq.sort
 end
 
 #
@@ -173,20 +186,20 @@ end
 def put_trusted_keys(keys, prv)
   keys_s = keys.join("\n") + "\n"
   # Key store
-  File.write(KEYTRUST, keys_s)
+  File.write(@trust_path, keys_s)
   # Signature
   data = {
     signature: Enc.encode(prv.sign(keys_s))
   }
-  File.write(KEYTRUST + SIGEXT, data.to_yaml)
+  File.write(@trust_path + SIGEXT, data.to_yaml)
 end
 
 #
-# Abbreviate a key to a form like PABCD EFGHI JKLMN (67 bits)
+# Abbreviate a key to a form like PABCDEFGHIJKLMN (67 bits)
 #
 # param key_str [String] the base32 encoded key
 def abbrev_key(key_str)
-  key_str[0, 5] + ' ' + key_str[5, 5] + ' ' +key_str[10, 5]
+  key_str[0, 15]
 end
 
 #
@@ -195,20 +208,20 @@ end
 def import_key
   msg = "<%=color('⚠ Keyfile found', YELLOW)%> in the current directory, " +
         "<%=color('overwrite it', BOLD)%> (Y/n)?"
-  return if File::file?(KEYFILE) && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
+  return if File::file?(@key_path) && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
 
   prv_str = ask("✏ Please paste the <%=color('signing key', BOLD)%>:\n") do |q|
     q.validate = /^K/
   end
   prv = RbNaCl::SigningKey.new(Enc.decode_key(prv_str))
   pub = prv.verify_key
-  write_signing_key prv, pub
+  write_signing_key(prv, pub)
 
   # Success: print key info and append to the trusted store
-  say "Signing key securely saved in <%=color('#{KEYFILE}', BOLD)%> file" if @options[:verbose]
+  say "Signing key securely saved in <%=color('#{@key_path}', BOLD)%> file" if @options[:verbose]
   pub_str = Enc.encode_pkey(pub)
   add_trusted_key(pub_str, prv)
-  say "Verify key added to trust list <%=color('#{KEYTRUST}', BOLD)%> file" if @options[:verbose]
+  say "Verify key added to trust list <%=color('#{@trust_path}', BOLD)%> file" if @options[:verbose]
   say "Verify key: <%=color('#{pub_str}', YELLOW)%>"
 end
 
@@ -216,21 +229,21 @@ end
 # Generate a new signing key
 #
 def generate
-  msg = "<%=color('⚠ Keyfile found', YELLOW)%> in the current directory, " +
+  msg = "<%=color('⚠ Keyfile found', YELLOW)%> in #{@key_path}, " +
         "<%=color('overwrite it', BOLD)%> (Y/n)?"
-  return if File::file?(KEYFILE) && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
+  return if File.file?(@key_path) && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
 
   start = Time.now
   prv = RbNaCl::SigningKey.generate
   pub = prv.verify_key
-  write_signing_key prv, pub
   say "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
+  write_signing_key(prv, pub)
 
   # Success: print key info and append to the trusted store
-  say "Signing key securely saved in <%=color('#{KEYFILE}', BOLD)%> file" if @options[:verbose]
+  say "Signing key securely saved in <%=color('#{@key_path}', BOLD)%> file" if @options[:verbose]
   pub_str = Enc.encode_pkey(pub)
   add_trusted_key(pub_str, prv)
-  say "Verify key added to trust list <%=color('#{KEYTRUST}', BOLD)%> file" if @options[:verbose]
+  say "Verify key added to trust list <%=color('#{@trust_path}', BOLD)%> file" if @options[:verbose]
   say "Verify key: <%=color('#{pub_str}', YELLOW)%>"
 end
 
@@ -241,36 +254,61 @@ end
 # param pub [VerifyKey] the verify key to write
 def write_signing_key(prv, pub)
   # Get a password
-  pwd1 = ask("✏ Please enter a <%=color('passphrase', BOLD)%>: ") {|q| q.echo = false}
-  raise PasswordError, 'The passphrases is too short' if pwd1.length < 4
-  pwd2 = ask("✏ Please retype it to check: ") {|q| q.echo = false}
-  raise PasswordError, 'The two passphrases do NOT match' unless pwd1 == pwd2
+  if @options[:secure]
+    pwd = SecureRandom.base64(9)
+    ask("Your password: <%=color('#{pwd}', RED+BOLD)%> (Press a key to hide) ") do |q|
+      q.echo      = false
+      q.overwrite = true
+      q.character = true
+    end
+  else
+    pwd = ask("✏ Please <%= @key %> <%=color('passphrase', BOLD)%>: ") do |q|
+      q.echo = false
+      q.verify_match = true
+      q.gather = { "choose a good" => "",  "type again the" => "" }
+    end
+    raise PasswordError, 'The passphrase is too short' if pwd.length < 5
+  end
 
   # Hash password with Argon2 (16-bytes salt, 32-bytes output)
-  salt = RbNaCl::Random.random_bytes RbNaCl::PasswordHash::Argon2::SALTBYTES
-  hash = RbNaCl::PasswordHash.argon2 pwd1, salt, 5, 7_256_678, 32
+  salt = RbNaCl::Random.random_bytes(RbNaCl::PasswordHash::Argon2::SALTBYTES)
+  hash = RbNaCl::PasswordHash.argon2(pwd, salt, 5, 7_256_678, 32)
   # Encrypt signing key with hash
-  box = RbNaCl::SecretBox.new hash
-  nonce = RbNaCl::Random.random_bytes box.nonce_bytes
+  box = RbNaCl::SecretBox.new(hash)
+  nonce = RbNaCl::Random.random_bytes(box.nonce_bytes)
   cipherkey = salt + nonce + box.encrypt(nonce, prv)  # 16 + 24 + (16 + 32)
+
   # Write encrypted key to file
   data = {
     verifykey: Enc.encode_kkey(pub),
     signingkey: Enc.encode(cipherkey)
   }
   File.open(KEYFILE, 'w') do |f|
-    f.chmod 0600
-    f.write data.to_yaml
+    f.chmod(0600)
+    f.write(data.to_yaml)
   end
+  # Trust store signature
+  File.delete(@trust_path + SIGEXT) if File.file?(@trust_path + SIGEXT)
+  @warn_trust = false
 end
 
 #
 # Read signing key
 #
 def read_signing_key
-  prvpub = get_signing_key
-  say "Signing key: <%=color('#{Enc.encode_kkey(prvpub[0])}', MAGENTA)%>"
-  say "Verify key:  <%=color('#{Enc.encode_pkey(prvpub[1])}', YELLOW)%>"
+  prv, pub = get_signing_key
+  say "Verify key:  <%=color('#{Enc.encode_pkey(pub)}', YELLOW)%>"
+  _, cols = $stdout.winsize
+  prv_str = Enc.encode_kkey(prv)
+  msg = ['Signing key: ',
+         cols > 56 ? "<%=color('#{prv_str}', MAGENTA)%> " :
+                     "<%=color('#{prv_str[0, cols - 4] + '...'}', MAGENTA)%> ",
+         "(Press a key to <%=color('hide', BOLD)%>) "]
+  ask(cols > 92 ? msg.join : msg[0] + msg[2] + "\n" + msg[1]) do |q|
+    q.echo      = false
+    q.overwrite = true
+    q.character = true
+  end
 end
 
 #
@@ -281,27 +319,34 @@ def read_verify_key
 end
 
 #
-# Sign file
+# Sign a file content
 #
-# param file [String] the name of the file to sign
-def sign_file(file)
+# param file [String] the signed file name (without sign extension)
+def sign(file)
   # Get keys
-  prvpub = get_signing_key
-  pub_str = Enc.encode_pkey prvpub[1]
+  prv, pub = get_signing_key
+  pub_str = Enc.encode_pkey(pub)
   say "Signing with key: <%=color('#{abbrev_key(pub_str)}', YELLOW)%>" if @options[:verbose]
   comment = @options[:comment] || ask("✏ You can attach a short <%=color('comment', BOLD)%>: ")
-  # Hash data
+
+  # Write signature content
   start = Time.now
-  sha512 = Digest::SHA512.file file
-  sha512 << "\0x00" + start.to_i.to_s
-  sha512 << "\0x00" + comment unless comment.empty?
-  # Write signed file and comment
-  data = {
-    comment: (comment unless comment.empty?),
-    datetime: start.to_i,
-    verifykey: Enc.encode_pkey(prvpub[1]),
-    signature: Enc.encode(prvpub[0].sign(sha512.digest))
-  }
+  sha = @options[:clearsg] ? Digest::SHA512.new : Digest::SHA512.file(file)
+  data = {}
+  unless comment.empty?
+    data[:comment] = comment
+    sha << "\0x00" + comment
+  end
+  data[:datetime] = start.to_i
+  sha << "\0x00" + start.to_i.to_s
+  data[:verifykey] = Enc.encode_pkey(pub)
+  if @options[:clearsg]
+    str = File.read(file)
+    data[:data] = str
+    sha << "\0x00" + str
+  end
+  data[:signature] = Enc.encode(prv.sign(sha.digest))
+
   msg = "# Signature made with Songe - #{SONGE_URL}\n" +
         "# Just verify it using the 'songev' ruby script:  songev '#{file}'\n\n"
   File.write(file + SIGEXT, msg + data.to_yaml)
@@ -310,29 +355,50 @@ def sign_file(file)
 end
 
 #
-# Verify file signature
+# Verify a signature for a file/data
 #
-# param file [String] the name of the file to verify
-def verify_file(file)
+# param file [String] the signed file name (without sign extension)
+def verify(file)
   # Read YAML file and comment
   data = YAML.load(File.open(file + SIGEXT))
+  raise KeyfileError, "Invalid file #{file + SIGEXT} content" unless data && data.is_a?(Hash)
+
   say "Signature in file: <%=color('#{file + SIGEXT}', BOLD)%>" if @options[:verbose]
+  clearsg = !File.file?(file)
+
   # Hash data
   start = Time.now
-  sha512 = Digest::SHA512.file file
-  sha512 << "\0x00" + data[:datetime].to_s
-  sha512 << "\0x00" + data[:comment] unless data[:comment].nil?
+  sha = if clearsg
+    raise VerificationError, "File #{file} does not exist, no signed data" if data[:data].nil?
+    Digest::SHA512.new
+  else
+    say "<%=color('⚠ Warning:', YELLOW)%> clear sign data found but ignored" if data.has_key?(:data)
+    Digest::SHA512.file(file)
+  end
+  sha << "\0x00" + data[:comment] unless data[:comment].nil?
+  sha << "\0x00" + data[:datetime].to_s
+  sha << "\0x00" + data[:data] if clearsg
+
   # Control data
   ctn = Enc.decode(data[:signature])
   pub = RbNaCl::VerifyKey.new Enc.decode_key(data[:verifykey])
   say "Signed with key: <%=color('#{abbrev_key(data[:verifykey])}', YELLOW)%>" if @options[:verbose]
-  t = get_trusted_keys.include?(data[:verifykey]) ? "with trusted key" :
-    "but the verify key is <%=color('✖ not trusted', RED+BOLD)%>\n" +
-    "  (<%=color('#{data[:verifykey]}', YELLOW)%>)"
-  say "<%=color('✔ Good signature', GREEN+BOLD)%> #{t}\n" if pub.verify(ctn, sha512.digest)
-  say "  signed on <%=color('#{Time.at(data[:datetime])}', BOLD)%>"
-  say "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
-  say "<%=color('comment', BOLD)%>: #{data[:comment]}\n" unless data[:comment].nil?
+  pub.verify(ctn, sha.digest) || raise(VerificationError, "BAD signature")
+  if clearsg
+    t = get_trusted_keys.include?(data[:verifykey]) ? "with trusted key" :
+      "but the verify key is ✖ not trusted\n  (#{data[:verifykey]})"
+    $stderr.puts "✔ Good signature #{t}\n  signed on #{Time.at(data[:datetime])}"
+    $stdout.print data[:data]
+    $stderr.puts "Comment: #{data[:comment]}\n" unless data[:comment].nil?
+  else
+    t = get_trusted_keys.include?(data[:verifykey]) ? "with trusted key" :
+      "but the verify key is <%=color('✖ not trusted', RED+BOLD)%>\n" +
+      "  (<%=color('#{data[:verifykey]}', YELLOW)%>)"
+    say "<%=color('✔ Good signature', GREEN+BOLD)%> #{t}\n"
+    say "  signed on <%=color('#{Time.at(data[:datetime])}', BOLD)%>"
+    say "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
+    say "<%=color('Comment', BOLD)%>: #{data[:comment]}\n" unless data[:comment].nil?
+  end
 end
 
 #
@@ -354,7 +420,7 @@ def list_trusted_keys(s = nil)
   end
   # Show results
   say "<%=color(#{match_nb.zero? ? "'✖ not', RED+BOLD" : "'✔ #{match_nb}', GREEN"})%> found" \
-    if  match_nb.zero? || @options[:verbose]
+    if match_nb.zero? || @options[:verbose]
 end
 
 #
@@ -382,7 +448,7 @@ end
 #
 # param arg [Any] an argument to be tested
 def dev_test(arg = nil)
-  raise "Nothing to test"
+  raise "Nothing to test (I said: Do not use it!)"
 end
 
 # ========== reading arguments ==========
@@ -393,7 +459,21 @@ public
 # Constructor
 #
 def initialize
+  @warn_trust = true
   @options = {}
+  # Search for key file in .|SONGE_HOME|HOME
+  if File.file?(KEYFILE)
+    @key_path = KEYFILE
+    @trust_path = KEYTRUST
+  elsif !(path = ENV[ENV_SHOME]).nil? && Dir.exist?(ENV[ENV_SHOME]) ||
+        !(path = ENV[ENV_HOME]).nil? && File.file?(File.join(path, KEYFILE))
+    # If found dir SONGE_HOME, no need to check if key file exists
+    @key_path = File.join(path, KEYFILE)
+    @trust_path = File.join(path, KEYTRUST)
+  else
+    @key_path = KEYFILE
+    @trust_path = KEYTRUST
+  end
 end
 
 #
@@ -415,6 +495,8 @@ Verify and signing use thus Ed25519 32-bytes keys. The signing key (starting wit
 encrypted with the user passphrase before saved on disk. The verify key (starting with 'P')
 is joined to the signing key saved on disk and to all signatures (so to verify a file, you
 just need the file and the signature `.sgsig` file). Key pair is saved to `.songe.key`.
+Key pair location is looked up from 1) current directory, 2) $SONGE_HOME environment var.,
+and then 3) $HOME environment var.
 
 Trusted recipients' verify keys may be added to a trusted keys list saved to `.songe.trust`
 to add confidence when verifiyng files signed by them. The trusted keystore is managed by
@@ -430,7 +512,7 @@ Examples:
   Sign a file with the new key (saves the signature to `./myfile.txt.sgsig`)
   $ songe --message 'first release' --sign myfile.txt
   Add a verify key to the trusted list (please use a full string key)
-  $ songe --add-key PDB4SQ...FRX5KJ
+  $ songe --add-key PABCD1...EFGH2
   Verify a downloaded file (assume the signature is `./myfile.txt.sgsig`)
   $ songe --verify myfile.txt
 
@@ -442,81 +524,85 @@ Options/commands:"
       @options[:verbose] = v
     end
 
-    opts.on("-r", "--[no-]secure", "Securely verify trust") do |v|
+    opts.on("-r", "--[no-]secure", "Securely verify trust / choose a password") do |v|
       @options[:secure] = v
     end
 
-    opts.on("-m", "--message MSG", "With sign, attach a message") do |v|
+    opts.on("-m", "--message MSG", "With --sign, attach a comment (will be signed)") do |v|
       @options[:comment] = v
+    end
+
+    opts.on("-e", "--[no-]embed", "with --sign, make an embedded signature") do |v|
+      @options[:clearsg] = v
     end
 
     # key commands
 
-    opts.on("-i", "--import", "Import an existing key") do
+    opts.on("-i", "--import-key", "Import an existing signing key locally") do
       import_key
       exit
     end
 
-    opts.on("-g", "--generate", "Generate a new keypair") do
+    opts.on("-g", "--generate", "Generate a new keypair and save it locally") do
       generate
       exit
     end
 
-    opts.on("-c", "--change-psp", "Change the passphrase") do
-      prvpub = get_signing_key
-      write_signing_key(prvpub[0], prvpub[1])
+    opts.on("-c", "--change-pass", "Change the passphrase of the signing key") do
+      prv, pub = get_signing_key
+      write_signing_key(prv, pub)
       exit
     end
 
-    opts.on("-k", "--signkey", "Show the signing key") do
+    opts.on("-k", "--signkey", "Write the signing key to standard output") do
       read_signing_key
       exit
     end
 
-    opts.on("-p", "--verifkey", "Show the verify key") do
+    opts.on("-p", "--verifkey", "Write the verify key to standard output") do
       read_verify_key
       exit
     end
 
-    opts.on("-s", "--sign FILE", "Sign the given file") do |f|
-      sign_file f
+    opts.on("-s", "--sign FILE", "Sign the given file with the signing key") do |f|
+      sign f
       exit
     end
 
-    opts.on("-v", "--verify FILE", "Verify the given file") do |f|
-      verify_file f
+    opts.on("-v", "--verify FILE", "Verify the given file (embedded verify key)") do |f|
+      verify f
       exit
     end
 
-    opts.on("-l", "--trusted [KEY]", "List the trusted keys") do |s|
+    opts.on("-l", "--trusted [KEY]", "List or search for the trusted keys") do |s|
       list_trusted_keys s
       exit
     end
 
-    opts.on("-a", "--add-key KEY", "Add a trusted key") do |k|
+    opts.on("-a", "--add-key KEY", "Add a trusted key to the keystore") do |k|
       Enc.decode_key k
       add_trusted_key k
       exit
     end
 
-    opts.on("-d", "--del-key KEY", "Remove a trusted key") do |k|
+    opts.on("-d", "--del-key KEY", "Remove a trusted key from the keystore") do |k|
       del_trusted_key k
       exit
     end
 
     # misc commands
 
-    opts.on("-t", "--test [ARG]", "Run some dev tests") do |a|
+    opts.on("-t", "--test [ARG]", "Run some dev tests (don't use it)") do |a|
       dev_test a
       exit
     end
 
-    opts.on("-h", "--help", "Prints this help") do
+    opts.on("-h", "--help", "Prints this help and quit") do
       puts opts
       exit
     end
 
-    opts.on("-n", "--version", "Print version info") do
+    opts.on("-n", "--version", "Print version info and quit") do
       say "<%=color('🎖  songe', BOLD)%>\n   dead simple signing file utility"
       say "   version <%=color('#{VERSION}', BOLD)%>\n   M.P. - Esprit Libre {dev}"
       exit
@@ -536,7 +622,7 @@ if __FILE__ == $0
     Songe::Sign.new.main
   rescue => ex
     say "<%=color('✖ #{ex.message.gsub("'"," ")}', RED+BOLD)%>"
-    say "<%=color('Backtrace', BOLD)%> (most recent first):\n  " + ex.backtrace.join("\n  ") \
+    say "dbg: <%=color('Backtrace', BOLD)%> (most recent first):\n  " + ex.backtrace.join("\n  ") \
       if Songe::DEBUG
     exit 1
   end

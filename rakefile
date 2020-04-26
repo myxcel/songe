@@ -5,7 +5,7 @@ task default: [:test]
 desc "Remove the signature files"
 task :clean do
   puts "Cleaning packages"
-  `rm test.txt.sgsig SHA256SUM.asc`
+  `rm test.txt.* SHA256SUM*`
 end
 
 desc "Test a songe verification"

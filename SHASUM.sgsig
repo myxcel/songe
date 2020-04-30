@@ -1,0 +1,11 @@
+# Signature made with Songe - https://github.com/CodeEspritLibre/songe
+# Just verify it using the 'songev' ruby script:  songev 'SHASUM'
+
+---
+:comment: Songe version 1.2.0.2
+:datetime: 1588279524
+:verifykey: PAVVKNVPOCLDAZHGQOI5L476MEPR4ITZ2G6SA2Q2TYZLEGNWP46RGG7G
+:data: |
+  9796f7d44d225b647d16f732555808d381cc8d821f3f727efd145a85ae0e079d  songe
+  b475b08fe2d8eef35163acbce91e3a6a6782d775335dd69209c21fd864edcd6a  songev
+:signature: gsivNXzuAKCnTsYNOifq9Azksm/jhugWYKY1qexFOCJhRRSZp8Y5W4mRzhUfG+4vyipEuDa4TEPLZKNvh9zmDQ==

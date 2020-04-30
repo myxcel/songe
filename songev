@@ -3,10 +3,11 @@
 
 #
 # Dead simple command line file signature verifier
+# Project page: https://github.com/CodeEspritLibre/songe#readme
 #
 #  Created  01/04/2020
-#  Updated  16/04/2020
-#  Version  1.2.0.0
+#  Updated  30/04/2020
+#  Version  1.2.0.2
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
@@ -35,13 +36,13 @@ begin
 rescue LoadError => ex
   puts "✖ #{ex.message.gsub("'"," ")}"
   puts "  songev requires the following gems: ed25519, base32, digest-crc"
-  exit 2
+  exit ex.status_code
 end
 
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.2.0.0'
+VERSION = '1.2.0.2'
 DEBUG   = false
 
 # ========== constants declaration ==========
@@ -182,7 +183,7 @@ def initialize
   if File.file?(KEYTRUST)
     @trust_path = KEYTRUST
   elsif !(path = ENV[ENV_SHOME]).nil? && Dir.exist?(ENV[ENV_SHOME]) ||
-        !(path = ENV[ENV_HOME]).nil? && File.file?(File.join(path, KEYFILE))
+        !(path = ENV[ENV_HOME]).nil? && File.file?(File.join(path, KEYTRUST))
     # If found dir SONGE_HOME, no need to check if key file exists
     @trust_path = File.join(path, KEYTRUST)
   else
@@ -230,7 +231,7 @@ Options/commands:"
 
     # misc commands
 
-    opts.on("-h", "--help", "Prints this help") do
+    opts.on("-h", "--help", "Print this help") do
       puts opts
       exit
     end
@@ -258,7 +259,7 @@ if __FILE__ == $0
   rescue => ex
     $stderr.puts "✖ #{ex.message.gsub("'"," ")}"
     $stderr.puts "Backtrace (most recent first):\n  " + ex.backtrace.join("\n  ") if Songe::DEBUG
-    exit 1
+    exit ex.status_code
   end
 end
 

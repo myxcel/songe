@@ -3,10 +3,11 @@
 
 #
 # Dead simple command line file signer and signature verifier
+# Project page: https://github.com/CodeEspritLibre/songe#readme
 #
 #  Created  01/04/2020
-#  Updated  23/04/2020
-#  Version  1.2.0.0
+#  Updated  30/04/2020
+#  Version  1.2.0.2
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
@@ -42,13 +43,13 @@ begin
 rescue LoadError => ex
   puts "✖ #{ex.message.gsub("'"," ")}"
   puts "  songe requires the following gems: rbnacl, base32, digest-crc, highline"
-  exit 2
+  exit ex.status_code
 end
 
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.2.0.0'
+VERSION = '1.2.0.2'
 DEBUG   = false
 
 # ========== constants declaration ==========
@@ -597,7 +598,7 @@ Options/commands:"
       exit
     end
 
-    opts.on("-h", "--help", "Prints this help and quit") do
+    opts.on("-h", "--help", "Print this help and quit") do
       puts opts
       exit
     end
@@ -624,7 +625,7 @@ if __FILE__ == $0
     say "<%=color('✖ #{ex.message.gsub("'"," ")}', RED+BOLD)%>"
     say "dbg: <%=color('Backtrace', BOLD)%> (most recent first):\n  " + ex.backtrace.join("\n  ") \
       if Songe::DEBUG
-    exit 1
+    exit ex.status_code
   end
 end
 

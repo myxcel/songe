@@ -5,7 +5,7 @@ task default: [:test]
 desc "Remove the signature files"
 task :clean do
   puts "Cleaning packages"
-  `rm test.txt.* SHA256SUM*`
+  `rm test.txt.* SHASUM*`
 end
 
 desc "Test a songe verification"
@@ -18,18 +18,12 @@ end
 desc "Sign the files with Keybase PGP"
 task :sign do
   puts "Signing songe/songev"
-  `sha256sum songe songev | keybase pgp sign --clearsign > SHA256SUM.asc`
+  `sha256sum songe songev | keybase pgp sign --clearsign > SHASUM.asc`
 end
 
 desc "Verify the checksums of scripts"
 task :verif do
   puts "Verifying songe/songev"
-  puts `keybase pgp verify --infile SHA256SUM.asc && grep ' songe' SHA256SUM.asc | sha256sum --check`
-end
-
-desc "Commit and push the last changes"
-task :push, [:msg, :v] do |t, args|
-  puts "Commiting and pushing changes"
-  puts `git commit --all --gpg-sign --message='#{args[:msg]} v#{args[:v]}' && git push`
+  puts `keybase pgp verify --infile SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum --check`
 end
 

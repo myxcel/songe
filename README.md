@@ -18,10 +18,14 @@ to add confidence when verifiyng files signed by them. The trusted keystore is m
 songe commands and signed at each editing access by the personal signing key. Although the
 trust keystore is signed, it is up to the user to check the recipient's key.
 
-## Features
+## Features and benefits
 
  * Sign and verify files easily with Ed25519 keys (detached or embedded signatures)
- * Manage a keystore of trusted recipients public keys
+ * Manage a simple keystore of trusted recipients public keys for secure verifications
+ * Dead simple to use (sign and verify) and yet secure (based on RbNaCl/libsodium)
+ * Possibility to attach a comment to the signature (will be signed as well)
+ * No need to get/share the verify key to verify a file (included in signature)
+ * Very small and friendly signature files (comment, datetime and signature in Yaml format)
 
 ## Installation
 
@@ -36,11 +40,22 @@ For the full version **songe**
  * [highline](https://github.com/JEG2/highline)
  * [base32](https://github.com/stesla/base32)
 
+ ```bash
+ # run as admin
+ apt install libsodium23
+ gem install rbnacl digest-crc highline base32
+ ```
+
 For the light (verify only) version **songev**
 
  * [ed25519](https://github.com/RubyCrypto/ed25519)
  * [digest-crc](https://github.com/postmodern/digest-crc)
  * [base32](https://github.com/stesla/base32)
+
+ ```bash
+ # run as admin
+ gem install ed25519 digest-crc base32
+ ```
 
 **songe** and **songev** are executable Ruby script files. They should be placed into a
 PATH-indexed system or user `bin/` directory. On Unix-like systems, make sure that they are
@@ -97,16 +112,25 @@ marked as executable (`chmod +x songe songev`), or run them as arguments of the 
 If you can (and want to) install *libsodium*, then use *songe*, otherwise or if you just
 have to verify signatures, use *songev*.
 
+- Here is said that I can add the recipient's verify key to a trusted list. Do I need it
+to verify a signature?
+
+No, for the verification, you **do not** need the verify key, since it is already included
+in the signature file `.sgsig`. Adding the key to the trusted list is only an additional
+layer of security: it allows you to check the sender's key only once.
+
 - Can I sign or verify from the standard input ?
 
 The signature process requires a file (can not be signed from `stdin`) but in the embedded
-mode the verification can read from `stdin`.
+mode (`--embed` option) the verification can read from `stdin`.
 
-- I sign file in embedded signature (`--embed` option), and the verification fails. Why?
+- I sign a file in embedded signature (`--embed` option), and the verification fails. Why?
 
-The verification first checks if a file without `.sgsig` extension exists, and if not, uses
-the embedded data in signature file. So checking an embedded signature requires that **no**
-original file name remains in the same directory.
+For security reasons, the verification first checks if a file without `.sgsig` extension
+exists, and if not, uses the embedded data in signature file. So checking an embedded
+signature requires that **no** original file name remains in the same directory (example:
+after signing the `SHASUM` file in embedded mode, a `SHASUM.sgsig` file is created
+containing the signed data, so please remove the original `SHASUM` file).
 
 ## Check scripts integrity
 
@@ -129,9 +153,11 @@ The next steps help you to verify sums _as well as_ sums signature.
 The Keybase PGP signing key belongs to [espritlibredev](https://keybase.io/espritlibredev)
 (fingerprint `AA77 7903 6281 D0E9 209B E8B9 2627 39EB A36C EB3E`).
 
-Go to https://keybase.io/verify and paste the content of the `SHASUM.asc` files, or
-if you are using [keybase](https://keybase.io), simply type the following command to verify
-the two scripts integrity:
+Go to https://keybase.io/verify and paste the content of the `SHASUM.asc` file, then (if
+valid signature) manually check the two sums
+
+**or** if you are using [keybase](https://keybase.io), simply type the following command in
+the downloaded Songe directory:
 
 ```bash
 keybase pgp verify -i SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum -c
@@ -140,7 +166,7 @@ keybase pgp verify -i SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum -c
 **or** if you prefer to use GnuPG:
 
 ```bash
-curl https://keybase.io/espritlibredev/pgp_keys.asc | gpg --import && \
+curl https://keybase.io/espritlibredev/key.asc | gpg --import && \
   gpg --verify SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum -c
 ```
 

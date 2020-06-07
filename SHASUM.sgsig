@@ -2,10 +2,10 @@
 # Just verify it using the 'songev' ruby script:  songev 'SHASUM'
 
 ---
-:comment: Songe version 1.2.0.2
-:datetime: 1588279524
+:comment: songe version 1.2.0.3
+:datetime: 1590862917
 :verifykey: PAVVKNVPOCLDAZHGQOI5L476MEPR4ITZ2G6SA2Q2TYZLEGNWP46RGG7G
 :data: |
-  9796f7d44d225b647d16f732555808d381cc8d821f3f727efd145a85ae0e079d  songe
-  b475b08fe2d8eef35163acbce91e3a6a6782d775335dd69209c21fd864edcd6a  songev
-:signature: gsivNXzuAKCnTsYNOifq9Azksm/jhugWYKY1qexFOCJhRRSZp8Y5W4mRzhUfG+4vyipEuDa4TEPLZKNvh9zmDQ==
+  f7adc94e86a6fba33526e353936dbedde942fd0b65bade15d7602750eb00cef9  songe
+  f65591538b838640df50c315710a2fee9005aef02c7c46ff58761c1075c93b1b  songev
+:signature: ukLXdaJcSIthg1AII72hkEmKgUyQ3/yfzaiZ2EffpCzcVuu53fR/tUS1zBn/mqd9ghxsQyybU/l7Zig+510hBA==

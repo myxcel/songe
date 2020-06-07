@@ -6,8 +6,8 @@
 # Project page: https://github.com/CodeEspritLibre/songe#readme
 #
 #  Created  01/04/2020
-#  Updated  30/04/2020
-#  Version  1.2.0.2
+#  Updated  30/05/2020
+#  Version  1.2.0.3
 #  Author   Micaël P. Esprit Libre {dev}
 #
 # Dependencies:
@@ -43,7 +43,7 @@ begin
 rescue LoadError => ex
   puts "✖ #{ex.message.gsub("'"," ")}"
   puts "  songe requires the following gems: rbnacl, base32, digest-crc, highline"
-  exit ex.status_code
+  exit 2
 end
 
 # ========== Songe global module ==========
@@ -625,7 +625,7 @@ if __FILE__ == $0
     say "<%=color('✖ #{ex.message.gsub("'"," ")}', RED+BOLD)%>"
     say "dbg: <%=color('Backtrace', BOLD)%> (most recent first):\n  " + ex.backtrace.join("\n  ") \
       if Songe::DEBUG
-    exit ex.status_code
+    exit 1
   end
 end
 

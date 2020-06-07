@@ -119,11 +119,6 @@ No, for the verification, you **do not** need the verify key, since it is alread
 in the signature file `.sgsig`. Adding the key to the trusted list is only an additional
 layer of security: it allows you to check the sender's key only once.
 
-- Can I sign or verify from the standard input ?
-
-The signature process requires a file (can not be signed from `stdin`) but in the embedded
-mode (`--embed` option) the verification can read from `stdin`.
-
 - I sign a file in embedded signature (`--embed` option), and the verification fails. Why?
 
 For security reasons, the verification first checks if a file without `.sgsig` extension

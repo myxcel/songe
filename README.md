@@ -137,13 +137,13 @@ are computed and the sums are then clear-signed with Keybase PGP and Songe itsel
 can choose to only verify sums, or sums with sums signatures. The commands below apply to
 the Unix-like environments.
 
-To only verify SHA-256 sums :
+To only verify SHA-256 sums:
 
 ```
 grep ' songe' SHASUM.asc | sha256sum -c
 ```
 
-The next steps help you to verify sums _as well as_ sums signature.
+To verify sums _as well as_ sums signature:
 
 The Keybase PGP signing key belongs to [espritlibredev](https://keybase.io/espritlibredev)
 (fingerprint `AA77 7903 6281 D0E9 209B E8B9 2627 39EB A36C EB3E`).
@@ -151,8 +151,8 @@ The Keybase PGP signing key belongs to [espritlibredev](https://keybase.io/espri
 Go to https://keybase.io/verify and paste the content of the `SHASUM.asc` file, then (if
 valid signature) manually check the two sums
 
-**or** if you are using [keybase](https://keybase.io), simply type the following command in
-the downloaded Songe directory:
+**or** if the [keybase app](https://keybase.io/download) is installed, simply type the following
+command in the downloaded Songe directory:
 
 ```bash
 keybase pgp verify -i SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum -c

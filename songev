@@ -3,12 +3,12 @@
 
 #
 # Dead simple command line file signature verifier
-# Project page: https://github.com/CodeEspritLibre/songe#readme
+# Project page: https://github.com/myxcel/songe#readme
 #
 #  Created  01/04/2020
-#  Updated  30/05/2020
-#  Version  1.2.0.3
-#  Author   Micaël P. Esprit Libre {dev}
+#  Updated  22/07/2024
+#  Version  1.2.1
+#  Author   Micaël P. (myxcel)
 #
 # Dependencies:
 #  - Ed25519,    https://github.com/RubyCrypto/ed25519
@@ -19,7 +19,6 @@
 #    installation:  $ sudo gem install digest-crc
 #
 # License:
-#  Copyright (c) 2020 Micaël P. Esprit Libre {dev}
 #  Distributed under the MIT License (https://mit-license.org/)
 #
 
@@ -42,7 +41,7 @@ end
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.2.0.2'
+VERSION = '1.2.1'
 DEBUG   = false
 
 # ========== constants declaration ==========
@@ -238,7 +237,7 @@ Options/commands:"
 
     opts.on("-n", "--version", "Print version info") do
       puts "🎖  songe\n   dead simple signing file utility"
-      puts "   version #{VERSION}\n   M.P. - Esprit Libre {dev}"
+      puts "   version #{VERSION}\n   Micaël P. (myxcel)"
       exit
     end
 

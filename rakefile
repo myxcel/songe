@@ -1,29 +1,39 @@
 # Actions for ruby project Songe
 
-task default: [:test]
+task default: [:clean]
 
 desc "Remove the signature files"
 task :clean do
   puts "Cleaning packages"
-  `rm test.txt.* SHASUM*`
+  `rm test.txt* SHASUM*`
 end
 
-desc "Test a songe verification"
-task :test do
-  puts "Testing verification"
-  puts `./songe --verbose --verify test.txt`
-  puts `./songev test.txt`
+desc "Install all dependencies"
+task :install do
+  puts "Installing deps (Ubuntu)"
+  puts `sudo apt install libsodium23`
+  puts `sudo gem install rbnacl highline base32 digest-crc strong_password`
 end
 
-desc "Sign the files with Keybase PGP"
+desc "Sign the files"
 task :sign do
-  puts "Signing songe/songev"
-  `sha256sum songe songev | keybase pgp sign --clearsign > SHASUM.asc`
+  puts "Signing songe/songev (please enter the passphrase)"
+  puts `sha256sum songe songev > SHASUM && ./songe --embed --sign SHASUM && rm SHASUM`
 end
 
 desc "Verify the checksums of scripts"
-task :verif do
+task :verify do
   puts "Verifying songe/songev"
-  puts `keybase pgp verify --infile SHASUM.asc && grep ' songe' SHASUM.asc | sha256sum --check`
+  puts `./songev SHASUM | sha256sum --check`
+end
+
+desc "Test a songe signature and verification"
+task :test do
+  `echo "Lorem ipsum dolor sit amet... et patati, et patata." > test.txt`
+  puts "Testing signature (please enter the passphrase)"
+  puts `./songe --sign test.txt`
+  puts "\nTesting verification"
+  puts `./songe --verbose --verify test.txt`
+  puts `./songev test.txt`
 end
 

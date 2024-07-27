@@ -3,12 +3,12 @@
 
 #
 # Dead simple command line file signer and signature verifier
-# Project page: https://github.com/CodeEspritLibre/songe#readme
+# Project page: https://github.com/myxcel/songe#readme
 #
 #  Created  01/04/2020
-#  Updated  30/05/2020
-#  Version  1.2.0.3
-#  Author   Micaël P. Esprit Libre {dev}
+#  Updated  22/07/2024
+#  Version  1.2.1.0
+#  Author   Micaël P. (myxcel)
 #
 # Dependencies:
 #  - libsodium, https://github.com/jedisct1/libsodium
@@ -21,9 +21,10 @@
 #    installation:  $ sudo gem install base32
 #  - digest-crc, https://github.com/postmodern/digest-crc
 #    installation:  $ sudo gem install digest-crc
+#  - strong_password, https://github.com/bdmac/strong_password
+#    installation:  $ sudo gen install strong_password
 #
 # License:
-#  Copyright (c) 2020 Micaël P. Esprit Libre {dev}
 #  Distributed under the MIT License (https://mit-license.org/)
 #
 
@@ -37,19 +38,21 @@ require 'yaml'
 begin
   # additional gems
   require 'highline/import'
+  require 'strong_password'
   require 'digest'
   require 'base32'
   require 'rbnacl'  # needs libsodium
 rescue LoadError => ex
   puts "✖ #{ex.message.gsub("'"," ")}"
-  puts "  songe requires the following gems: rbnacl, base32, digest-crc, highline"
+  puts "⚠ songe requires the following gems to be installed:\n" +
+    "  rbnacl, base32, digest-crc, highline, strong_password"
   exit 2
 end
 
 # ========== Songe global module ==========
 module Songe
 
-VERSION = '1.2.0.2'
+VERSION = '1.2.1'
 DEBUG   = false
 
 # ========== constants declaration ==========
@@ -57,7 +60,7 @@ DEBUG   = false
 KEYFILE  = '.songe.key'
 KEYTRUST = '.songe.trust'
 SIGEXT   = '.sgsig'
-SONGE_URL = 'https://github.com/CodeEspritLibre/songe'
+SONGE_URL = 'https://github.com/myxcel/songe'
 ENV_SHOME = 'SONGE_HOME'
 ENV_HOME  = 'HOME'
 
@@ -124,7 +127,7 @@ private
 # Returns the stored pair as an array [SigningKey, VerifyKey]
 #
 def get_signing_key
-  raise KeyfileError, "No keyfile found in dir, SONGE_HOME or HOME" unless File.file?(@key_path)
+  raise KeyfileError, "No keyfile found in current dir, $SONGE_HOME or $HOME" unless File.file?(@key_path)
   say "🗝 Keyfile found in <%=color('#{@key_path}', BOLD)%>"
 
   # Read key file
@@ -152,7 +155,7 @@ end
 # Returns the stored VerifyKey
 #
 def get_verify_key
-  raise KeyfileError, "No keyfile found in dir, SONGE_HOME or HOME" unless File.file?(@key_path)
+  raise KeyfileError, "No keyfile found in current dir, $SONGE_HOME nor $HOME" unless File.file?(@key_path)
 
   # Read key file
   data = YAML.load(File.open(@key_path))
@@ -232,13 +235,18 @@ end
 def generate
   msg = "<%=color('⚠ Keyfile found', YELLOW)%> in #{@key_path}, " +
         "<%=color('overwrite it', BOLD)%> (Y/n)?"
-  return if File.file?(@key_path) && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
+  has_key = File.file?(@key_path)
+  return if has_key && ask(msg) { |q| q.validate = /Y|n/ } != 'Y'
 
   start = Time.now
   prv = RbNaCl::SigningKey.generate
+  pub_old = Enc.encode_pkey(get_verify_key) if has_key
   pub = prv.verify_key
   say "<%=color('(⏲ #{'%.2f' % ((Time.now - start) * 1000)} ms)', GRAY)%>" if @options[:verbose]
   write_signing_key(prv, pub)
+
+  # Remove old key from trusted store
+  del_trusted_key(pub_old, prv) if has_key
 
   # Success: print key info and append to the trusted store
   say "Signing key securely saved in <%=color('#{@key_path}', BOLD)%> file" if @options[:verbose]
@@ -249,6 +257,16 @@ def generate
 end
 
 #
+# Change private key passphrase
+#
+def change_passphrase
+  prv, pub = get_signing_key
+  write_signing_key(prv, pub)
+  pub_str = Enc.encode_pkey(pub)
+  add_trusted_key(pub_str, prv)
+end
+
+#
 # Write signing key
 #
 # param prv [SigningKey] the signing key to write
@@ -256,19 +274,22 @@ end
 def write_signing_key(prv, pub)
   # Get a password
   if @options[:secure]
-    pwd = SecureRandom.base64(9)
-    ask("Your password: <%=color('#{pwd}', RED+BOLD)%> (Press a key to hide) ") do |q|
-      q.echo      = false
-      q.overwrite = true
+    pwd = SecureRandom.base64(12).chars.each_slice(4).map(&:join).join('-')
+    key = ask("Your password: <%=color('#{pwd}', RED+BOLD)%>\n" +
+        "<%=color('Write it down', YELLOW+BOLD)%> in a safe place, then press 'Y' to validate: ") do |q|
+      q.echo      = true
       q.character = true
     end
+    raise PasswordError, 'Change passphrase cancelled' if key != 'Y'
   else
-    pwd = ask("✏ Please <%= @key %> <%=color('passphrase', BOLD)%>: ") do |q|
-      q.echo = false
-      q.verify_match = true
-      q.gather = { "choose a good" => "",  "type again the" => "" }
-    end
-    raise PasswordError, 'The passphrase is too short' if pwd.length < 5
+    echo = Proc.new { |p| p.echo = false }
+    pwd = ask("✏ Please choose a good <%=color('passphrase', BOLD)%>: ", &echo)
+    # Check for password strength
+    checker = StrongPassword::StrengthChecker.new(min_entropy: 18)  # default
+    raise PasswordError, 'The passphrase is too WEAK' if checker.is_weak?(pwd)
+    # Check for repeat
+    pwdc = ask("✏ Please type again the <%=color('passphrase', BOLD)%>: ", &echo)
+    raise PasswordError, 'The passphrases does NOT match' if pwd != pwdc
   end
 
   # Hash password with Argon2 (16-bytes salt, 32-bytes output)
@@ -281,7 +302,7 @@ def write_signing_key(prv, pub)
 
   # Write encrypted key to file
   data = {
-    verifykey: Enc.encode_kkey(pub),
+    verifykey: Enc.encode_pkey(pub),
     signingkey: Enc.encode(cipherkey)
   }
   File.open(KEYFILE, 'w') do |f|
@@ -407,8 +428,9 @@ end
 #
 # param s [String] the key substring to filter with, or nil for no filter
 def list_trusted_keys(s = nil)
+  keys = get_trusted_keys
   match_nb = 0
-  get_trusted_keys.each_with_index do |k, i|
+  keys.each_with_index do |k, i|
     if s.nil?
       match_nb += 1
       say "🗝 #{'%2d' % (i + 1)}: <%=color('#{k}', YELLOW)%>"
@@ -420,8 +442,11 @@ def list_trusted_keys(s = nil)
     end
   end
   # Show results
-  say "<%=color(#{match_nb.zero? ? "'✖ not', RED+BOLD" : "'✔ #{match_nb}', GREEN"})%> found" \
-    if match_nb.zero? || @options[:verbose]
+  if keys.size == 0
+    say "<%=color('⚠ No', YELLOW)%> trusted keys yet, please generate yours or add one"
+  elsif match_nb.zero? || @options[:verbose]
+    say "<%=color(#{match_nb.zero? ? "'✖ not', RED+BOLD" : "'✔ #{match_nb}', GREEN"})%> found"
+  end
 end
 
 #
@@ -449,7 +474,7 @@ end
 #
 # param arg [Any] an argument to be tested
 def dev_test(arg = nil)
-  raise "Nothing to test (I said: Do not use it!)"
+  raise "Nothing to test (I said: Do not use it!)" unless DEBUG
 end
 
 # ========== reading arguments ==========
@@ -550,8 +575,7 @@ Options/commands:"
     end
 
     opts.on("-c", "--change-pass", "Change the passphrase of the signing key") do
-      prv, pub = get_signing_key
-      write_signing_key(prv, pub)
+      change_passphrase
       exit
     end
 
@@ -605,7 +629,7 @@ Options/commands:"
 
     opts.on("-n", "--version", "Print version info and quit") do
       say "<%=color('🎖  songe', BOLD)%>\n   dead simple signing file utility"
-      say "   version <%=color('#{VERSION}', BOLD)%>\n   M.P. - Esprit Libre {dev}"
+      say "   version <%=color('#{VERSION}', BOLD)%>\n   Micaël P. (myxcel)"
       exit
     end
 

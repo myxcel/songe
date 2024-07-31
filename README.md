@@ -144,13 +144,12 @@ songe --generate
 songe --add-key PCINJUEXO6IVL44KLEBNTXG7GMHWVNAAOOUVZTXC5R7KAT67DTKXX3CO
 ```
 
+
 ## License
 
 Micaël P. - Distributed under the MIT License. See
 [LICENSE](https://github.com/myxcel/songe/blob/master/LICENSE) for further details.
 
-If you like Songe, please buy me a coffee, or a pizza ☕🍕 😃
+If you like Songe, please remember it's maintained in my free time, and... [buy me a coffee](https://gist.github.com/myxcel/bcbddb4a2429e2fc84dc5f813ad5a87e#file-support-md) ❤️
 
-<a href="https://www.buymeacoffee.com/myxcel" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 30px !important;width: 170px !important;" ></a>
-<a href="https://liberapay.com/myxcel/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>
 
